@@ -11,7 +11,9 @@ To publish a release:
 3. Merge/push those changes to the repository's default branch. The
    `Release packages` workflow checks that the changelog version matches
    `Cargo.toml`, builds all six native targets, then creates the `vX.Y.Z`
-   GitHub release and uploads each package with a SHA-256 file.
+   GitHub release and uploads each package with a SHA-256 file. The release
+   notes combine the changelog entry with the pushed commit's SHA, author, date
+   and full message.
 
 The workflow produces ZIP archives for Windows x86_64 and ARM64, and tar.gz
 archives for Linux x86_64/ARM64 and macOS Intel/Apple Silicon. Each archive

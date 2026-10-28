@@ -142,8 +142,12 @@ jobs:
           path: ${{ runner.temp }}/release-assets
           merge-multiple: true
 
-      - name: Extract changelog release notes
-        run: python3 scripts/release_metadata.py --notes "$RUNNER_TEMP/release-notes.md"
+      - name: Build release notes from changelog and commit
+        run: >-
+          python3 scripts/release_metadata.py
+          --notes "$RUNNER_TEMP/release-notes.md"
+          --commit-sha "$GITHUB_SHA"
+          --repository "$GITHUB_REPOSITORY"
 
       - name: Publish release and all platform packages
         env:
