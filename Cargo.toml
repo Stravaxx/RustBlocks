@@ -1,0 +1,22 @@
+[package]
+name = "rustblocks"
+version = "0.1.0"
+edition = "2024"
+description = "A native, modular falling-block puzzle game written in Rust"
+license = "MIT"
+
+[dependencies]
+cpal = "0.15"
+directories = "5"
+macroquad = "0.4"
+serde = { version = "1", features = ["derive"] }
+tempfile = "3"
+toml = "0.8"
+
+[[bin]]
+name = "rustblocks"
+path = "src/main.rs"
+
+[[bin]]
+name = "rustblocks-audio"
+path = "src/bin/audio_diagnostic.rs"
