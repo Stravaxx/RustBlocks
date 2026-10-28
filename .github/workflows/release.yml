@@ -115,7 +115,7 @@ jobs:
           cp "target/$TARGET/release/rustblocks" "target/$TARGET/release/rustblocks-audio" README.md LICENSE CHANGELOG.md "$stage/"
           archive="rustblocks-v$VERSION-$PLATFORM.tar.gz"
           tar -czf "$dist/$archive" -C "$stage" .
-          shasum -a 256 "$dist/$archive" > "$dist/$archive.sha256"
+          (cd "$dist" && shasum -a 256 "$archive" > "$archive.sha256")
 
       - name: Upload platform package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
