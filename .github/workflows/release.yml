@@ -134,6 +134,8 @@ jobs:
     steps:
       - name: Check out release source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
 
       - name: Download release packages
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -146,7 +148,7 @@ jobs:
         run: >-
           python3 scripts/release_metadata.py
           --notes "$RUNNER_TEMP/release-notes.md"
-          --commit-sha "$GITHUB_SHA"
+          --commit-sha "$(git log -1 --format=%H "$GITHUB_SHA" -- CHANGELOG.md)"
           --repository "$GITHUB_REPOSITORY"
 
       - name: Publish release and all platform packages
@@ -156,10 +158,19 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
           PRERELEASE: ${{ needs.validate.outputs.prerelease }}
         run: |
+          target=$(git ls-remote origin "refs/heads/$GITHUB_REF_NAME" | cut -f1)
+          if [[ -z "$target" ]]; then
+            echo "Could not resolve the default branch head for the release tag." >&2
+            exit 1
+          fi
+          if ! git diff --quiet "$GITHUB_SHA" "$target" -- src Cargo.toml Cargo.lock CHANGELOG.md README.md LICENSE; then
+            echo "Release source or packaged files changed while building. Retry after the default branch is stable." >&2
+            exit 1
+          fi
           args=()
           if [[ "$PRERELEASE" == true ]]; then args+=(--prerelease); fi
           gh release create "$TAG" "$RUNNER_TEMP"/release-assets/* \
-            --target "$GITHUB_SHA" \
+            --target "$target" \
             --title "RustBlocks $VERSION" \
             --notes-file "$RUNNER_TEMP/release-notes.md" \
             "${args[@]}"
