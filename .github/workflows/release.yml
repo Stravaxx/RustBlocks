@@ -1,0 +1,161 @@
+name: Release packages
+
+on:
+  push:
+    paths:
+      - CHANGELOG.md
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate changelog release
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Validate version and extract changelog release
+        id: release
+        run: python3 scripts/release_metadata.py --output "$GITHUB_OUTPUT" --notes "$RUNNER_TEMP/release-notes.md"
+
+      - name: Validate Cargo manifest and lockfile
+        run: cargo metadata --locked --no-deps --format-version 1 > /dev/null
+
+      - name: Refuse an already released version
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "Release tag v$VERSION already exists; bump Cargo.toml and CHANGELOG.md." >&2
+            exit 1
+          fi
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux-x86_64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            platform: linux-aarch64
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            platform: windows-x86_64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            platform: windows-aarch64
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            platform: macos-intel
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            platform: macos-apple-silicon
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Install Linux audio build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libasound2-dev
+
+      - name: Build release binaries
+        run: cargo build --release --locked --target ${{ matrix.target }} --bins
+
+      - name: Run tests on the native target
+        run: cargo test --workspace --locked --target ${{ matrix.target }}
+
+      - name: Package Windows binaries
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'rustblocks-package'
+          $dist = Join-Path $env:RUNNER_TEMP 'release-dist'
+          New-Item -ItemType Directory -Force -Path $stage, $dist | Out-Null
+          Copy-Item "target/$env:TARGET/release/rustblocks.exe", "target/$env:TARGET/release/rustblocks-audio.exe", README.md, LICENSE, CHANGELOG.md -Destination $stage
+          $archive = "rustblocks-v$env:VERSION-$env:PLATFORM.zip"
+          $archivePath = Join-Path $dist $archive
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $archivePath
+          $hash = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvariant()
+          "$hash  $archive" | Set-Content -NoNewline -Encoding ascii "$archivePath.sha256"
+
+      - name: Package Linux and macOS binaries
+        if: runner.os != 'Windows'
+        env:
+          TARGET: ${{ matrix.target }}
+          PLATFORM: ${{ matrix.platform }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          stage="$RUNNER_TEMP/rustblocks-package"
+          dist="$RUNNER_TEMP/release-dist"
+          mkdir -p "$stage" "$dist"
+          cp "target/$TARGET/release/rustblocks" "target/$TARGET/release/rustblocks-audio" README.md LICENSE CHANGELOG.md "$stage/"
+          archive="rustblocks-v$VERSION-$PLATFORM.tar.gz"
+          tar -czf "$dist/$archive" -C "$stage" .
+          shasum -a 256 "$dist/$archive" > "$dist/$archive.sha256"
+
+      - name: Upload platform package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rustblocks-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release-dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish GitHub release
+    needs: [validate, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out release source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Download release packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: rustblocks-*
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+
+      - name: Extract changelog release notes
+        run: python3 scripts/release_metadata.py --notes "$RUNNER_TEMP/release-notes.md"
+
+      - name: Publish release and all platform packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          PRERELEASE: ${{ needs.validate.outputs.prerelease }}
+        run: |
+          args=()
+          if [[ "$PRERELEASE" == true ]]; then args+=(--prerelease); fi
+          gh release create "$TAG" "$RUNNER_TEMP"/release-assets/* \
+            --target "$GITHUB_SHA" \
+            --title "RustBlocks $VERSION" \
+            --notes-file "$RUNNER_TEMP/release-notes.md" \
+            "${args[@]}"

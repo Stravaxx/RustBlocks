@@ -1,16 +1,25 @@
 # Release procedure
 
-1. Review the feature and platform state in `IMPLEMENTATION_STATUS.md`.
-2. Run formatting, Clippy and the full test suite on a clean checkout.
-3. Build natively on Linux, macOS and Windows using the CI matrix.
-4. Review the dependency licenses and advisories, including transitive crates.
-5. Build each platform with `cargo build --release`, archive the executable
-   together with README, license and third-party notices, then calculate
-   SHA-256 checksums with the platform's standard tool (`shasum -a 256` on
-   macOS, `sha256sum` on Linux, `Get-FileHash -Algorithm SHA256` on Windows).
-6. Publish checksums and platform-specific limitations alongside each asset.
-7. Sign/notarize macOS builds and sign Windows packages only when publisher
-   credentials and a separate release workflow have been configured.
+## Automated GitHub release
 
-This repository currently has CI builds but no packaging/signing workflow.
-There are no release artifacts in the initial implementation.
+To publish a release:
+
+1. Update `package.version` in `Cargo.toml` and the root `rustblocks` entry in
+   `Cargo.lock` with the same SemVer version.
+2. Add a release at the top of `CHANGELOG.md`, using the exact heading
+   `## X.Y.Z - YYYY-MM-DD`, and include non-empty release notes under it.
+3. Merge/push those changes to the repository's default branch. The
+   `Release packages` workflow checks that the changelog version matches
+   `Cargo.toml`, builds all six native targets, then creates the `vX.Y.Z`
+   GitHub release and uploads each package with a SHA-256 file.
+
+The workflow produces ZIP archives for Windows x86_64 and ARM64, and tar.gz
+archives for Linux x86_64/ARM64 and macOS Intel/Apple Silicon. Each archive
+contains both RustBlocks binaries, README, license and changelog. It does not
+sign/notarize binaries or build native installers. Linux packages are built on
+Ubuntu and require the host's graphics and ALSA runtime libraries.
+
+The workflow only publishes changes made on the default branch. A failed
+version check or build prevents publication. The same workflow can be started
+manually from the default branch to retry a release; an already-created tag
+must be handled intentionally rather than overwritten.
