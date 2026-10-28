@@ -1,6 +1,6 @@
 [package]
 name = "rustblocks"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 description = "A native, modular falling-block puzzle game written in Rust"
 license = "MIT"

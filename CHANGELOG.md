@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 - 2026-10-28
+## 1.0.0 - 2026-10-28
 
 - Initial native Rust implementation with macroquad UI and independent game
   rules.
